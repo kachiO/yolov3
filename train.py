@@ -9,6 +9,8 @@ import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
 from utils.utils import *
+import time
+from pathlib import Path
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -16,11 +18,6 @@ try:  # Mixed precision training https://github.com/NVIDIA/apex
 except:
     print('Apex recommended for faster mixed precision training: https://github.com/NVIDIA/apex')
     mixed_precision = False  # not installed
-
-wdir = 'weights' + os.sep  # weights dir
-last = wdir + 'last.pt'
-best = wdir + 'best.pt'
-results_file = 'results.txt'
 
 # Hyperparameters https://github.com/ultralytics/yolov3/issues/310
 hyp = {'giou': 3.54,  # giou loss gain
@@ -62,6 +59,12 @@ def train():
     weights = opt.weights  # initial training weights
     imgsz_min, imgsz_max, imgsz_test = opt.img_size  # img sizes (min, max, test)
 
+    #wdir = checkpoint_dir               #'weights' + os.sep  # weights dir
+    checkpoint_dir = opt.checkpoint_dir
+    last = checkpoint_dir / 'last.pt'   ##wdir + 'last.pt'
+    best = checkpoint_dir / 'best.pt'   #wdir + 'best.pt'
+    results_file = checkpoint_dir / 'results.txt'
+
     # Image Sizes
     gs = 64  # (pixels) grid size
     assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
@@ -83,8 +86,8 @@ def train():
     hyp['cls'] *= nc / 80  # update coco-tuned hyp['cls'] to current dataset
 
     # Remove previous results
-    for f in glob.glob('*_batch*.png') + glob.glob(results_file):
-        os.remove(f)
+    #for f in glob.glob('*_batch*.png') + glob.glob(results_file):
+    #    os.remove(f)
 
     # Initialize model
     model = Darknet(cfg).to(device)
@@ -183,6 +186,7 @@ def train():
     # Dataloader
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
+
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
                                              num_workers=nw,
@@ -217,9 +221,10 @@ def train():
     # torch.autograd.set_detect_anomaly(True)
     results = (0, 0, 0, 0, 0, 0, 0)  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     t0 = time.time()
-    print('Image sizes %g - %g train, %g test' % (imgsz_min, imgsz_max, imgsz_test))
-    print('Using %g dataloader workers' % nw)
-    print('Starting training for %g epochs...' % epochs)
+    print(f'Image sizes {imgsz_min} - {imgsz_max}train, {imgsz_test} test')
+    print(f'Using {nw} dataloader workers')
+    print(f'Starting training for {epochs} epochs...')
+
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
 
@@ -232,6 +237,7 @@ def train():
         mloss = torch.zeros(4).to(device)  # mean losses
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
+
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
@@ -291,7 +297,7 @@ def train():
 
             # Plot images with bounding boxes
             if ni < 1:
-                f = 'train_batch%g.png' % i  # filename
+                f = str(checkpoint_dir / f'train_batch{i}.png') # filename
                 plot_images(imgs=imgs, targets=targets, paths=paths, fname=f)
                 if tb_writer:
                     tb_writer.add_image(f, cv2.imread(f)[:, :, ::-1], dataformats='HWC')
@@ -314,11 +320,13 @@ def train():
                                       model=ema.ema,
                                       save_json=final_epoch and is_coco,
                                       single_cls=opt.single_cls,
-                                      dataloader=testloader)
+                                      dataloader=testloader,
+                                      training=True)
 
         # Write epoch results
         with open(results_file, 'a') as f:
             f.write(s + '%10.3g' * 7 % results + '\n')  # P, R, mAP, F1, test_losses=(GIoU, obj, cls)
+
         if len(opt.name) and opt.bucket:
             os.system('gsutil cp results.txt gs://%s/results/results%s.txt' % (opt.bucket, opt.name))
 
@@ -352,6 +360,7 @@ def train():
             # Save best checkpoint
             if (best_fitness == fi) and not final_epoch:
                 torch.save(chkpt, best)
+                strip_optimizer(best)
 
             # Save backup every 10 epochs (optional)
             # if epoch > 0 and epoch % 10 == 0:
@@ -363,19 +372,19 @@ def train():
         # end epoch ----------------------------------------------------------------------------------------------------
 
     # end training
-    n = opt.name
-    if len(n):
-        n = '_' + n if not n.isnumeric() else n
-        fresults, flast, fbest = 'results%s.txt' % n, wdir + 'last%s.pt' % n, wdir + 'best%s.pt' % n
-        for f1, f2 in zip([wdir + 'last.pt', wdir + 'best.pt', 'results.txt'], [flast, fbest, fresults]):
-            if os.path.exists(f1):
-                os.rename(f1, f2)  # rename
-                ispt = f2.endswith('.pt')  # is *.pt
-                strip_optimizer(f2) if ispt else None  # strip optimizer
-                os.system('gsutil cp %s gs://%s/weights' % (f2, opt.bucket)) if opt.bucket and ispt else None  # upload
+    # n = opt.name
+    # if len(n):
+    #     n = f'_{n}' if not n.isnumeric() else n
+    #     fresults, flast, fbest = 'results%s.txt' % n, wdir + 'last%s.pt' % n, wdir + 'best%s.pt' % n
+    #     for f1, f2 in zip([wdir + 'last.pt', wdir + 'best.pt', 'results.txt'], [flast, fbest, fresults]):
+    #         if os.path.exists(f1):
+    #             os.rename(f1, f2)  # rename
+    #             ispt = f2.endswith('.pt')  # is *.pt
+    #             strip_optimizer(f2) if ispt else None  # strip optimizer
+    #             os.system('gsutil cp %s gs://%s/weights' % (f2, opt.bucket)) if opt.bucket and ispt else None  # upload
 
     if not opt.evolve:
-        plot_results()  # save as results.png
+        plot_results(fname=str(checkpoint_dir/'results.png'))  # save as results.png
     print('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
     dist.destroy_process_group() if torch.cuda.device_count() > 1 else None
     torch.cuda.empty_cache()
@@ -405,20 +414,33 @@ if __name__ == '__main__':
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     opt = parser.parse_args()
     opt.weights = last if opt.resume else opt.weights
-    check_git_status()
+    
+    try:
+        check_git_status()
+    except :
+        pass
+    print('\n\n\n')
     print(opt)
     opt.img_size.extend([opt.img_size[-1]] * (3 - len(opt.img_size)))  # extend to 3 sizes (min, max, test)
     device = torch_utils.select_device(opt.device, apex=mixed_precision, batch_size=opt.batch_size)
+
     if device.type == 'cpu':
         mixed_precision = False
 
     # scale hyp['obj'] by img_size (evolved at 320)
     # hyp['obj'] *= opt.img_size[0] / 320.
+    start_time = time.time()
+    local_start_time_str = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime(start_time))
+    checkpoint_dir = Path(f"./checkpoints/{opt.name}/{local_start_time_str}")
+    log_dir = Path(f"runs/{opt.name}/{local_start_time_str}")
+    log_dir.mkdir(exist_ok=True, parents=True)
+    checkpoint_dir.mkdir(exist_ok=True, parents=True)
+    opt.checkpoint_dir = checkpoint_dir
 
     tb_writer = None
     if not opt.evolve:  # Train normally
-        print('Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/')
-        tb_writer = SummaryWriter(comment=opt.name)
+        print(f'Start Tensorboard with "tensorboard --logdir={log_dir}", view at http://localhost:6006/')
+        tb_writer = SummaryWriter(log_dir, comment=opt.name)
         train()  # train normally
 
     else:  # Evolve hyperparameters (optional)

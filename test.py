@@ -1,12 +1,13 @@
 import argparse
 import json
+import sys
 
 from torch.utils.data import DataLoader
 
 from models import *
 from utils.datasets import *
 from utils.utils import *
-
+from terminaltables import AsciiTable
 
 def test(cfg,
          data,
@@ -19,7 +20,9 @@ def test(cfg,
          single_cls=False,
          augment=False,
          model=None,
-         dataloader=None):
+         dataloader=None,
+         coco_eval=False,
+         training=False):
     # Initialize/load model and set device
     if model is None:
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
@@ -178,43 +181,58 @@ def test(cfg,
     else:
         nt = torch.zeros(1)
 
+    if not training:
+        orig_stdout = sys.stdout
+        f = open('test_results.txt', 'w')
+        sys.stdout = f
+
     # Print results
     pf = '%20s' + '%10.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map, mf1))
 
     # Print results per class
+    out_table = [['Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1']]
+    out_table += [['all', seen, nt.sum(), f'{mp:.5f}', f'{mr:.5f}', f'{map:.5f}', f'{mf1:.5f}']]
+
     if verbose and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
             print(pf % (names[c], seen, nt[c], p[i], r[i], ap[i], f1[i]))
+            out_table += [[names[c], seen, nt[c], f'{float(p[i]):.5f}', f'{float(r[i]):.5f}', f'{float(ap[i]):.5f}', f'{float(f1[i]):.5f}']]
+        print(AsciiTable(out_table).table)
 
     # Print speeds
     if verbose or save_json:
         t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (img_size, img_size, batch_size)  # tuple
         print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
 
+    if not training:
+        sys.stdout = orig_stdout
+        f.close()
+
     # Save JSON
     if save_json and map and len(jdict):
-        print('\nCOCO mAP with pycocotools...')
         imgIds = [int(Path(x).stem.split('_')[-1]) for x in dataloader.dataset.img_files]
         with open('results.json', 'w') as file:
             json.dump(jdict, file)
 
-        try:
-            from pycocotools.coco import COCO
-            from pycocotools.cocoeval import COCOeval
-        except:
-            print('WARNING: missing pycocotools package, can not compute official COCO mAP. See requirements.txt.')
+        if coco_eval:
+            print('\nCOCO mAP with pycocotools...')
+            try:
+                from pycocotools.coco import COCO
+                from pycocotools.cocoeval import COCOeval
+            except:
+                print('WARNING: missing pycocotools package, can not compute official COCO mAP. See requirements.txt.')
 
-        # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-        cocoGt = COCO(glob.glob('../coco/annotations/instances_val*.json')[0])  # initialize COCO ground truth api
-        cocoDt = cocoGt.loadRes('results.json')  # initialize COCO pred api
+            # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+            cocoGt = COCO(glob.glob('../coco/annotations/instances_val*.json')[0])  # initialize COCO ground truth api
+            cocoDt = cocoGt.loadRes('results.json')  # initialize COCO pred api
 
-        cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
-        cocoEval.params.imgIds = imgIds  # [:32]  # only evaluate these images
-        cocoEval.evaluate()
-        cocoEval.accumulate()
-        cocoEval.summarize()
-        mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
+            cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+            cocoEval.params.imgIds = imgIds  # [:32]  # only evaluate these images
+            cocoEval.evaluate()
+            cocoEval.accumulate()
+            cocoEval.summarize()
+            mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
 
     # Return results
     maps = np.zeros(nc) + map
@@ -240,7 +258,7 @@ if __name__ == '__main__':
     opt = parser.parse_args()
     opt.save_json = opt.save_json or any([x in opt.data for x in ['coco.data', 'coco2014.data', 'coco2017.data']])
     print(opt)
-
+    
     # task = 'test', 'study', 'benchmark'
     if opt.task == 'test':  # (default) test normally
         test(opt.cfg,
