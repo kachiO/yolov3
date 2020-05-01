@@ -32,10 +32,6 @@ def test(cfg,
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
         verbose = opt.task == 'test'
 
-        # Remove previous
-        #for f in glob.glob('test_batch*.png'):
-        #    os.remove(f)
-
         # Initialize model
         model = Darknet(cfg, img_size)
 
@@ -175,6 +171,13 @@ def test(cfg,
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
+        # Plot images
+        if batch_i < 1:
+            f = 'test_batch%g_gt.jpg' % batch_i  # filename
+            plot_images(imgs, targets, paths=paths, names=names, fname=f)  # ground truth
+            f = 'test_batch%g_pred.jpg' % batch_i
+            plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f)  # predictions
+
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats):
@@ -237,7 +240,7 @@ def test(cfg,
             cocoEval.evaluate()
             cocoEval.accumulate()
             cocoEval.summarize()
-            mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
+            #mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
 
     # Return results
     maps = np.zeros(nc) + map

@@ -51,26 +51,26 @@ Python 3.7 or later with all `pip install -U -r requirements.txt` packages inclu
 
 ## Image Augmentation
 
-`datasets.py` applies OpenCV-powered (https://opencv.org/) augmentation to the input image. We use a **mosaic dataloader** (pictured below) to increase image variability during training.
+`datasets.py` applies OpenCV-powered (https://opencv.org/) augmentation to the input image. We use a **mosaic dataloader** to increase image variability during training.
 
-<img src="https://user-images.githubusercontent.com/26833433/66699231-27beea80-ece5-11e9-9cad-bdf9d82c500a.jpg" width="900">
+<img src="https://user-images.githubusercontent.com/26833433/80769557-6e015d00-8b02-11ea-9c4b-69310eb2b962.jpg" width="900">
 
 ## Speed
 
 https://cloud.google.com/deep-learning-vm/  
 **Machine type:** preemptible [n1-standard-16](https://cloud.google.com/compute/docs/machine-types) (16 vCPUs, 60 GB memory)   
 **CPU platform:** Intel Skylake  
-**GPUs:** K80 ($0.20/hr), T4 ($0.35/hr), V100 ($0.83/hr) CUDA with [Nvidia Apex](https://github.com/NVIDIA/apex) FP16/32  
-**HDD:** 1 TB SSD  
+**GPUs:** K80 ($0.14/hr), T4 ($0.11/hr), V100 ($0.74/hr) CUDA with [Nvidia Apex](https://github.com/NVIDIA/apex) FP16/32    
+**HDD:** 1 TB SSD
 **Dataset:** COCO train 2014 (117,263 images)  
 **Model:** `yolov3-spp.cfg`  
 **Command:**  `python3 train.py --img 416 --batch 32 --accum 2`
 
 GPU |n| `--batch --accum` | img/s | epoch<br>time | epoch<br>cost
 --- |--- |--- |--- |--- |---
-K80    |1| 32 x 2 | 11  | 175 min  | $0.58
-T4     |1<br>2| 32 x 2<br>64 x 1 | 41<br>61 | 48 min<br>32 min | $0.28<br>$0.36
-V100   |1<br>2| 32 x 2<br>64 x 1 | 122<br>**178** | 16 min<br>**11 min** | **$0.23**<br>$0.31
+K80    |1| 32 x 2 | 11  | 175 min  | $0.41
+T4     |1<br>2| 32 x 2<br>64 x 1 | 41<br>61 | 48 min<br>32 min | $0.09<br>$0.11
+V100   |1<br>2| 32 x 2<br>64 x 1 | 122<br>**178** | 16 min<br>**11 min** | **$0.21**<br>$0.28
 2080Ti |1<br>2| 32 x 2<br>64 x 1 | 81<br>140 | 24 min<br>14 min | -<br>-
 
 # Inference
@@ -157,7 +157,7 @@ Speed: 17.5/2.3/19.9 ms inference/NMS/total per 640x640 image at batch-size 16
 
 This command trains `yolov3-spp.cfg` from scratch to our mAP above. Training takes about one week on a 2080Ti.
 ```bash
-$ python3 train.py --weights '' --cfg yolov3-spp.cfg --epochs 300 --batch 16 --accum 4 --multi
+$ python3 train.py --weights '' --cfg yolov3-spp.cfg --epochs 300 --batch-size 16 --img 320 640
 ```
 <img src="https://user-images.githubusercontent.com/26833433/77986559-408b7e80-72cc-11ea-9c4f-5d7820840a98.png" width="900">
 
