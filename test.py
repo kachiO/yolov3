@@ -8,6 +8,7 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 from terminaltables import AsciiTable
+from pathlib import Path
 
 def test(cfg,
          data,
@@ -23,14 +24,17 @@ def test(cfg,
          dataloader=None,
          coco_eval=False,
          training=False):
+
+    results_dir = opt.results_dir
+
     # Initialize/load model and set device
     if model is None:
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
         verbose = opt.task == 'test'
 
         # Remove previous
-        for f in glob.glob('test_batch*.png'):
-            os.remove(f)
+        #for f in glob.glob('test_batch*.png'):
+        #    os.remove(f)
 
         # Initialize model
         model = Darknet(cfg, img_size)
@@ -79,6 +83,7 @@ def test(cfg,
     p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
+
     for batch_i, (imgs, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
@@ -86,7 +91,7 @@ def test(cfg,
         whwh = torch.Tensor([width, height, width, height]).to(device)
 
         # Plot images with bounding boxes
-        f = 'test_batch%g.png' % batch_i  # filename
+        f = results_dir / f'test_batch{batch_i}.png'  # filename
         if batch_i < 1 and not os.path.exists(f):
             plot_images(imgs=imgs, targets=targets, paths=paths, fname=f)
 
@@ -183,7 +188,7 @@ def test(cfg,
 
     if not training:
         orig_stdout = sys.stdout
-        f = open('test_results.txt', 'w')
+        f = open(results_dir / 'test_results.txt', 'w')
         sys.stdout = f
 
     # Print results
@@ -212,7 +217,7 @@ def test(cfg,
     # Save JSON
     if save_json and map and len(jdict):
         imgIds = [int(Path(x).stem.split('_')[-1]) for x in dataloader.dataset.img_files]
-        with open('results.json', 'w') as file:
+        with open(results_dir / 'results.json', 'w') as file:
             json.dump(jdict, file)
 
         if coco_eval:
@@ -256,7 +261,13 @@ if __name__ == '__main__':
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     opt = parser.parse_args()
+
     opt.save_json = opt.save_json or any([x in opt.data for x in ['coco.data', 'coco2014.data', 'coco2017.data']])
+    results_dir = Path('./results/').joinpath(Path(opt.weights).relative_to('checkpoints'))
+    results_dir = results_dir.parent / f'{results_dir.stem}_{opt.img_size}'
+    results_dir.mkdir(parents=True, exist_ok=True)
+    opt.results_dir = results_dir
+
     print(opt)
     
     # task = 'test', 'study', 'benchmark'
@@ -279,7 +290,7 @@ if __name__ == '__main__':
                 t = time.time()
                 r = test(opt.cfg, opt.data, opt.weights, opt.batch_size, i, opt.conf_thres, j, opt.save_json)[0]
                 y.append(r + (time.time() - t,))
-        np.savetxt('benchmark.txt', y, fmt='%10.4g')  # y = np.loadtxt('study.txt')
+        np.savetxt(results_dir / 'benchmark.txt', y, fmt='%10.4g')  # y = np.loadtxt('study.txt')
 
     elif opt.task == 'study':  # Parameter study
         y = []
@@ -288,7 +299,7 @@ if __name__ == '__main__':
             t = time.time()
             r = test(opt.cfg, opt.data, opt.weights, opt.batch_size, opt.img_size, opt.conf_thres, i, opt.save_json)[0]
             y.append(r + (time.time() - t,))
-        np.savetxt('study.txt', y, fmt='%10.4g')  # y = np.loadtxt('study.txt')
+        np.savetxt(results_dir / 'study.txt', y, fmt='%10.4g')  # y = np.loadtxt('study.txt')
 
         # Plot
         fig, ax = plt.subplots(3, 1, figsize=(6, 6))
@@ -303,4 +314,4 @@ if __name__ == '__main__':
             ax[i].legend()
             ax[i].set_xlabel('iou_thr')
         fig.tight_layout()
-        plt.savefig('study.jpg', dpi=200)
+        plt.savefig(results_dir / 'study.jpg', dpi=200)
