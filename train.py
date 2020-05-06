@@ -61,10 +61,9 @@ def train():
     weights = opt.weights  # initial training weights
     imgsz_min, imgsz_max, imgsz_test = opt.img_size  # img sizes (min, max, test)
 
-    #wdir = checkpoint_dir               #'weights' + os.sep  # weights dir
     checkpoint_dir = opt.checkpoint_dir
-    last = checkpoint_dir / 'last.pt'   ##wdir + 'last.pt'
-    best = checkpoint_dir / 'best.pt'   #wdir + 'best.pt'
+    last = checkpoint_dir / 'last.pt'   
+    best = checkpoint_dir / 'best.pt'   
     results_file = checkpoint_dir / 'results.txt'
 
     # Image Sizes
@@ -390,8 +389,9 @@ if __name__ == '__main__':
     
     try:
         check_git_status()
-    except :
+    except:
         pass
+
     print('\n\n\n')
     print(opt)
     opt.img_size.extend([opt.img_size[-1]] * (3 - len(opt.img_size)))  # extend to 3 sizes (min, max, test)
