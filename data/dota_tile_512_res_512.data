@@ -1,0 +1,4 @@
+classes= 6
+train=/projects/general-datasets/DOTA/tile_512_512_res_512_512/train.txt
+valid=/projects/general-datasets/DOTA/tile_512_512_res_512_512/valid.txt
+names=/projects/general-datasets/DOTA/tile_512_512_res_512_512/classes.names

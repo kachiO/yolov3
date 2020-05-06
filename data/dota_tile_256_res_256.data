@@ -1,0 +1,4 @@
+classes= 6
+train=/projects/general-datasets/DOTA/tile_256_256_res_256_256/train.txt
+valid=/projects/general-datasets/DOTA/tile_256_256_res_256_256/valid.txt
+names=/projects/general-datasets/DOTA/tile_256_256_res_256_256/classes.names
